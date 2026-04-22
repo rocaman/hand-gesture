@@ -1,0 +1,6 @@
+{
+  "name": "Gesture Deck",
+  "description": "An interactive card browsing experience featuring real-time hand gesture control.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["hand-tracking", "interactive-ui"]
+}
