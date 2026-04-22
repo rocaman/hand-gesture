@@ -5,13 +5,13 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import Webcam from 'react-webcam';
-import { motion, AnimatePresence, useSpring, useMotionValue } from 'motion/react';
-import { Hand, Camera, Info, Maximize2, Layers } from 'lucide-react';
+import { motion, AnimatePresence, useSpring } from 'motion/react';
+import { Hand, Camera, Info, Maximize2, Layers, Sparkles, LayoutGrid, Target } from 'lucide-react';
 import { useHandTracker } from './hooks/useHandTracker';
-import { CARDS, CardData } from './types';
+import { CARDS, CardData, GestureType } from './types';
 
 // Cursor component to show hand position
-const HandCursor = ({ x, y, isPinching, isVisible }: { x: number; y: number; isPinching: boolean; isVisible: boolean }) => {
+const HandCursor = ({ x, y, gesture, isVisible }: { x: number; y: number; gesture: GestureType; isVisible: boolean }) => {
   const springX = useSpring(x, { damping: 25, stiffness: 200 });
   const springY = useSpring(y, { damping: 25, stiffness: 200 });
 
@@ -28,9 +28,9 @@ const HandCursor = ({ x, y, isPinching, isVisible }: { x: number; y: number; isP
       className="fixed pointer-events-none z-[100] mix-blend-difference"
     >
       <div 
-        className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center transition-transform duration-200 ${isPinching ? 'scale-75 bg-white' : 'scale-100'}`}
+        className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center transition-all duration-300 ${gesture !== 'none' ? 'scale-125' : 'scale-100'}`}
       >
-        <div className="w-1 h-1 bg-white rounded-full" />
+        <div className={`w-1 h-1 bg-white rounded-full transition-all duration-300 ${gesture === 'pinch' ? 'scale-[10] opacity-50' : 'scale-100'}`} />
       </div>
     </motion.div>
   );
@@ -41,37 +41,47 @@ interface DeckCardProps {
   card: CardData;
   containerSize: { width: number; height: number };
   handPos: { x: number; y: number };
-  isPinching: boolean;
+  gesture: GestureType;
+  globalLayout: 'default' | 'scatter' | 'stack';
 }
 
 const DeckCard = ({ 
   card, 
   containerSize, 
   handPos, 
-  isPinching 
+  gesture,
+  globalLayout
 }: DeckCardProps) => {
   const [isGrabbed, setIsGrabbed] = useState(false);
   const [z, setZ] = useState(1);
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
   const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Initialize position once container size is available
+  // Initialize and handle global layouts
   useEffect(() => {
-    if (containerSize.width > 0 && !hasInitialized) {
-      setCurrentPos({
-        x: (card.initialX / 100) * containerSize.width,
-        y: (card.initialY / 100) * containerSize.height
-      });
+    if (containerSize.width > 0) {
+      let targetX = (card.initialX / 100) * containerSize.width;
+      let targetY = (card.initialY / 100) * containerSize.height;
+
+      if (globalLayout === 'scatter') {
+        targetX = Math.random() * (containerSize.width - 280);
+        targetY = Math.random() * (containerSize.height - 380);
+      } else if (globalLayout === 'stack') {
+        targetX = containerSize.width / 2 - 140;
+        targetY = containerSize.height / 2 - 190;
+      }
+
+      setCurrentPos({ x: targetX, y: targetY });
       setHasInitialized(true);
     }
-  }, [containerSize, card.initialX, card.initialY, hasInitialized]);
+  }, [containerSize, card.initialX, card.initialY, globalLayout]);
 
   // Calculate if hand is over card
   const CARD_WIDTH = 280;
   const CARD_HEIGHT = 380;
 
   useEffect(() => {
-    if (isPinching) {
+    if (gesture === 'pinch') {
       const dx = Math.abs(handPos.x - (currentPos.x + CARD_WIDTH / 2));
       const dy = Math.abs(handPos.y - (currentPos.y + CARD_HEIGHT / 2));
 
@@ -83,7 +93,7 @@ const DeckCard = ({
       setIsGrabbed(false);
       setZ(1);
     }
-  }, [isPinching, handPos.x, handPos.y, currentPos.x, currentPos.y]);
+  }, [gesture, handPos.x, handPos.y, currentPos.x, currentPos.y]);
 
   useEffect(() => {
     if (isGrabbed) {
@@ -109,7 +119,7 @@ const DeckCard = ({
         zIndex: z,
         opacity: 1,
         scale: isGrabbed ? 1.05 : 1,
-        rotate: isGrabbed ? 0 : card.initialRotate,
+        rotate: isGrabbed ? 0 : (globalLayout === 'stack' ? card.initialRotate / 2 : card.initialRotate),
       }}
       transition={{ 
         type: 'spring', 
@@ -146,6 +156,7 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [showInstructions, setShowInstructions] = useState(true);
+  const [globalLayout, setGlobalLayout] = useState<'default' | 'scatter' | 'stack'>('default');
 
   // Resize handling
   useEffect(() => {
@@ -167,9 +178,19 @@ export default function App() {
 
   const handState = useHandTracker(webcamRef as any);
 
+  // Gesture Actions
+  useEffect(() => {
+    if (handState.gesture === 'palm') {
+      setGlobalLayout('scatter');
+    } else if (handState.gesture === 'fist') {
+      setGlobalLayout('stack');
+    } else if (handState.gesture === 'peace') {
+      setGlobalLayout('default');
+    }
+  }, [handState.gesture]);
+
   // Convert normalized hand coords to screen coords
   const screenHandPos = useMemo(() => ({
-    // Normalized coords are 0-1, but often flipped horizontally (mirror)
     x: (1 - handState.indexTip.x) * containerSize.width,
     y: handState.indexTip.y * containerSize.height
   }), [handState.indexTip, containerSize]);
@@ -193,9 +214,9 @@ export default function App() {
         
         <div className="flex flex-col items-end gap-4 pointer-events-auto text-right">
           <nav className="flex flex-col gap-2">
-            <a href="#" className="text-sm font-medium text-white hover:text-accent transition-colors">GRID VIEW</a>
-            <a href="#" className="text-sm font-medium text-text-dim hover:text-white transition-colors">FREEFORM</a>
-            <a href="#" className="text-sm font-medium text-text-dim hover:text-white transition-colors">COLLECTIONS</a>
+            <span className={`text-[10px] font-mono tracking-widest uppercase transition-colors ${globalLayout === 'default' ? 'text-accent' : 'text-text-dim'}`}>[ GRID_MODE ]</span>
+            <span className={`text-[10px] font-mono tracking-widest uppercase transition-colors ${globalLayout === 'scatter' ? 'text-accent' : 'text-text-dim'}`}>[ SCATTER_MODE ]</span>
+            <span className={`text-[10px] font-mono tracking-widest uppercase transition-colors ${globalLayout === 'stack' ? 'text-accent' : 'text-text-dim'}`}>[ STACK_MODE ]</span>
           </nav>
           <button 
             onClick={() => setShowInstructions(!showInstructions)}
@@ -227,18 +248,30 @@ export default function App() {
             <span className="text-text-dim">Engine</span>
             <div className={`w-2 h-2 rounded-full ${handState.isVisible ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`} />
           </div>
-          <div className="flex justify-between text-text-dim opacity-60">
-            <span>Tracking</span>
-            <span>Hand_01</span>
-          </div>
-          <div className="flex justify-between text-text-dim opacity-60">
-            <span>Confidence</span>
-            <span>{handState.isVisible ? '98.2%' : '0.00%'}</span>
-          </div>
-          <div className="h-px bg-dark-border mt-2" />
           <div className="flex justify-between items-center pt-1">
-            <span>Active Cmd</span>
-            <span className="text-accent">{handState.isPinching ? 'DRAG_OBJECT' : 'IDLE'}</span>
+            <span>Gesture</span>
+            <span className="text-accent font-bold">{handState.gesture !== 'none' ? handState.gesture : 'IDLE'}</span>
+          </div>
+          <div className="h-px bg-dark-border my-2" />
+          
+          {/* Gesture Guide */}
+          <div className="space-y-2 pt-1 opacity-80">
+            <div className="flex items-center gap-3 text-text-dim">
+              <Sparkles size={12} className="text-accent" />
+              <span>Open Palm → Scatter</span>
+            </div>
+            <div className="flex items-center gap-3 text-text-dim">
+              <Layers size={12} className="text-accent" />
+              <span>Fist → Stack Center</span>
+            </div>
+            <div className="flex items-center gap-3 text-text-dim">
+              <LayoutGrid size={12} className="text-accent" />
+              <span>Peace → Reset Grid</span>
+            </div>
+            <div className="flex items-center gap-3 text-text-dim">
+              <Target size={12} className="text-accent" />
+              <span>Pinch → Grab Item</span>
+            </div>
           </div>
         </div>
       </div>
@@ -252,7 +285,8 @@ export default function App() {
               card, 
               containerSize, 
               handPos: screenHandPos, 
-              isPinching: handState.isPinching 
+              gesture: handState.gesture,
+              globalLayout
             } as any)}
           />
         ))}
@@ -272,9 +306,9 @@ export default function App() {
                 </div>
                 <h2 className="text-3xl font-bold mb-4 tracking-tight">Access Calibration</h2>
                 <p className="text-text-dim mb-10 leading-relaxed text-sm">
-                  The spatial engine requires hand tracking for object manipulation.
+                  The spatial engine recognizes complex hand geometry. 
                   <span className="text-white block mt-6 font-mono text-[10px] tracking-widest border-l-2 border-accent pl-4 uppercase">
-                    Pinch index to grab objects.
+                    Open palm to scatter, Fist to stack, Peace to reset.
                   </span>
                 </p>
                 <button 
@@ -292,16 +326,21 @@ export default function App() {
         <HandCursor 
           x={screenHandPos.x} 
           y={screenHandPos.y} 
-          isPinching={handState.isPinching} 
+          gesture={handState.gesture} 
           isVisible={handState.isVisible} 
         />
       </div>
 
       {/* Footer / Camera Control UI */}
-      <div className="absolute bottom-10 left-10 flex gap-4 pointer-events-none z-50">
-        <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">L</div>
-        <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">R</div>
-        <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">T</div>
+      <div className="absolute bottom-10 left-10 flex flex-col gap-4 pointer-events-none z-50">
+        <div className="flex gap-4">
+          <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">L</div>
+          <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">R</div>
+          <div className="w-10 h-10 border border-dark-border rounded-full flex items-center justify-center text-[10px] font-mono text-text-dim">T</div>
+        </div>
+        <div className="text-[10px] font-mono text-accent uppercase tracking-widest">
+          {handState.isVisible ? `Hand detected: ${handState.gesture}` : 'Scanning for input...'}
+        </div>
       </div>
     </div>
   );

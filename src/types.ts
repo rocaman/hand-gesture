@@ -8,10 +8,13 @@ export interface HandPoint {
   y: number;
 }
 
+export type GestureType = 'pinch' | 'palm' | 'fist' | 'peace' | 'none';
+
 export interface HandState {
   indexTip: HandPoint;
   thumbTip: HandPoint;
   isPinching: boolean;
+  gesture: GestureType;
   isVisible: boolean;
 }
 
